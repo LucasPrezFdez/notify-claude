@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Animaciones del gato</title>
+<style>
+  body { margin: 0; padding: 24px; background: #14161c; color: #e6e6ea; font: 15px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 16px; color: #9a9cab; max-width: 70ch; }
+  .grid { display: flex; flex-wrap: wrap; gap: 20px; }
+  figure { margin: 0; background: #1d2029; border: 1px solid #2c303c; border-radius: 8px; padding: 12px; }
+  figcaption { margin-top: 8px; max-width: 310px; }
+  figcaption b { display: block; }
+  figcaption span { color: #9a9cab; font-size: 13px; }
+  canvas { display: block; image-rendering: pixelated; width: 310px; background: #3a6ea5; border-radius: 4px; }
+  label { display: inline-flex; gap: 8px; align-items: center; margin-bottom: 16px; color: #9a9cab; }
+</style>
+</head>
+<body>
+<h1>Animaciones del gato</h1>
+<p class="sub">Vista previa a 30 fotogramas por segundo. La franja oscura de abajo hace de barra de tareas: el gato sale de detrás de ella.</p>
+<label>Velocidad <input id="speed" type="range" min="10" max="150" value="100"> <span id="speedv"></span></label>
+<div class="grid" id="grid"></div>
+<script>
+/*CORE*/
+const SCENES = [
+  ['Entrada', 'Pone las patas en el borde, asoma, mira a los lados, se agacha, salta y aterriza.', [['entrada', 1], ['quieto', 1], ['oculto', 1]]],
+  ['Reposo', 'Respira, mueve la cola con la punta retrasada, parpadea, mueve una oreja y mira a un lado.', [['reposo', 1]]],
+  ['Pregunta', 'Levanta una pata y la agita, ladeando la cabeza.', [['pregunta', 1]]],
+  ['Permiso', 'Se yergue sobre las patas traseras y pide con las dos delanteras.', [['permiso', 1]]],
+  ['Salida', 'Guiña un ojo, se agacha y salta detrás de la barra; la cola es lo último que se ve.', [['quieto', 1], ['salida', 1], ['oculto', 1]]],
+  ['Aviso completo (pregunta)', 'Entrada, espera y salida seguidas.', [['entrada', 1], ['pregunta', 2], ['salida', 1], ['oculto', 1]]],
+  ['Aviso completo (permiso)', 'Entrada, espera y salida seguidas.', [['entrada', 1], ['permiso', 2], ['salida', 1], ['oculto', 1]]],
+];
+const players = SCENES.map(([title, desc, seq]) => {
+  const fig = document.createElement('figure'), cv = document.createElement('canvas');
+  cv.width = STAGE.W; cv.height = STAGE.H;
+  fig.append(cv); fig.insertAdjacentHTML('beforeend', '<figcaption><b>' + title + '</b><span>' + desc + '</span></figcaption>');
+  document.getElementById('grid').append(fig);
+  const ctx = cv.getContext('2d'), img = ctx.createImageData(STAGE.W, STAGE.H);
+  const list = seq.flatMap(([n, k]) => Array.from({ length: k }, () => n));
+  let i = 0, t = 0, T = 0;
+  return dt => {
+    t += dt; T += dt;
+    while (t >= ANIMS[list[i]].dur) { t -= ANIMS[list[i]].dur; i = (i + 1) % list.length; if (i === 0) T = t; }
+    const { px, dy } = frameAt(list[i], t, T), d = img.data;
+    for (let y = 0; y < STAGE.H; y++) for (let x = 0; x < STAGE.W; x++) {
+      const o = (y * STAGE.W + x) * 4;
+      const c = y >= STAGE.EDGE ? [27, 31, 42] : (px[y - STAGE.TOP - dy] || [])[x - 2];
+      if (c) { d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 255; } else d[o + 3] = 0;
+    }
+    ctx.putImageData(img, 0, 0);
+  };
+});
+const speed = document.getElementById('speed'), speedv = document.getElementById('speedv');
+const show = () => { speedv.textContent = speed.value + ' %'; };
+speed.oninput = show; show();
+setInterval(() => players.forEach(p => p(speed.value / 100 / FPS)), 1000 / FPS);
+</script>
+</body>
+</html>
