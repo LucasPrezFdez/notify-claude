@@ -9,6 +9,7 @@ use crate::cat::{Frame, Pose, GH, GW, OY};
 pub enum Kind {
     Pregunta,
     Permiso,
+    Terminado,
 }
 
 impl Kind {
@@ -16,7 +17,25 @@ impl Kind {
         match self {
             Kind::Pregunta => Anim::Pregunta,
             Kind::Permiso => Anim::Permiso,
+            Kind::Terminado => Anim::Terminado,
         }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Kind::Pregunta => "pregunta",
+            Kind::Permiso => "permiso",
+            Kind::Terminado => "terminado",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<Kind> {
+        [Kind::Pregunta, Kind::Permiso, Kind::Terminado].into_iter().find(|k| k.name() == s)
+    }
+
+    /// Un aviso que no espera nada de ti se despide solo cuando lleva un rato a la vista.
+    fn leaves_alone(self) -> bool {
+        self == Kind::Terminado
     }
 }
 
@@ -35,6 +54,9 @@ enum Pending {
 
 /// Momento de la entrada en que el gato ya ha aterrizado y puede hablar.
 const BUBBLE_FROM: f64 = 2.6;
+/// Segundos con el bocadillo a la vista tras los que se despide solo un aviso que no
+/// espera nada de ti.
+const LEAVE_AFTER: f64 = 10.0;
 
 pub struct Director {
     phase: Phase,
@@ -81,6 +103,9 @@ impl Director {
             }
         }
         self.bubble_age = if self.bubble_visible() { self.bubble_age + dt } else { 0.0 };
+        if self.kind.leaves_alone() && self.pending.is_none() && self.bubble_age >= LEAVE_AFTER {
+            self.dismiss();
+        }
         true
     }
 
@@ -224,8 +249,40 @@ mod tests {
 
     #[test]
     fn sin_atender_no_se_va_nunca() {
-        let mut d = Director::new(Kind::Pregunta);
-        assert!(run(&mut d, 120.0));
+        for kind in [Kind::Pregunta, Kind::Permiso] {
+            let mut d = Director::new(kind);
+            assert!(run(&mut d, 120.0));
+            assert!(d.bubble_visible());
+        }
+    }
+
+    #[test]
+    fn el_aviso_de_terminado_se_va_solo_al_rato() {
+        let mut d = Director::new(Kind::Terminado);
+        // el bocadillo sale a los 2,6 s y se queda 10 s más
+        assert!(run(&mut d, 12.0));
+        assert!(d.bubble_visible());
+        run(&mut d, 1.0);
+        assert!(!d.bubble_visible());
+        assert!(!run(&mut d, 5.0), "se despide y se va sin que hagas nada");
+    }
+
+    #[test]
+    fn otro_aviso_de_terminado_vuelve_a_contar_el_rato() {
+        let mut d = Director::new(Kind::Terminado);
+        run(&mut d, 10.0);
+        d.alert(Kind::Terminado);
+        assert!(run(&mut d, 9.0));
+        assert!(d.bubble_visible());
+    }
+
+    #[test]
+    fn una_pregunta_encima_de_un_terminado_ya_no_se_va_sola() {
+        let mut d = Director::new(Kind::Terminado);
+        run(&mut d, 8.0);
+        d.alert(Kind::Pregunta);
+        assert!(run(&mut d, 60.0));
+        assert_eq!(d.kind, Kind::Pregunta);
         assert!(d.bubble_visible());
     }
 
@@ -353,6 +410,8 @@ mod tests {
             (Kind::Pregunta, "¿Qué base de datos prefieres para guardar las sesiones?", "notify-claude", 2.2),
             (Kind::Pregunta, "¿Qué base de datos prefieres para guardar las sesiones?", "notify-claude", 4.6),
             (Kind::Permiso, "¿Puedo usar Bash?", "DesktopFriend", 5.6),
+            (Kind::Terminado, "¡He terminado!", "notify-claude", 4.3),
+            (Kind::Terminado, "¡He terminado!", "notify-claude", 6.0),
         ];
         let (s, sb) = scales(96);
         let cells: Vec<(Layout, Vec<u32>)> = shots

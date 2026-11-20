@@ -25,6 +25,7 @@ const sample = (name, n, t0 = 0, t1 = ANIMS[name].dur) => Array.from({ length: n
 const which = process.argv[2] || 'all';
 if (which === 'all' || which === 'entrada') strip('tira-entrada.png', sample('entrada', 24, 0.1, 3.0), 8, 3);
 if (which === 'all' || which === 'poses') strip('tira-poses.png', [...sample('pregunta', 8, 0, 1.4), ...sample('permiso', 8, 0, 1.7), ...sample('salida', 8, 0.1, 1.7)], 8, 3);
+if (which === 'all' || which === 'terminado') strip('tira-terminado.png', sample('terminado', 24, 0, 4.6), 8, 3);
 if (which === 'all' || which === 'reposo') strip('tira-reposo.png', sample('reposo', 16, 0, 6.2), 8, 3);
 
 // comprobar todas las animaciones a 30 fps, sin excepciones

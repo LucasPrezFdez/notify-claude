@@ -29,9 +29,11 @@ const SCENES = [
   ['Reposo', 'Respira, mueve la cola con la punta retrasada, parpadea, mueve una oreja y mira a un lado.', [['reposo', 1]]],
   ['Pregunta', 'Levanta una pata y la agita, ladeando la cabeza.', [['pregunta', 1]]],
   ['Permiso', 'Se yergue sobre las patas traseras y pide con las dos delanteras.', [['permiso', 1]]],
+  ['Terminado', 'Cierra los ojos sonriendo, da dos saltitos con la cola en alto y balancea la cabeza.', [['terminado', 1]]],
   ['Salida', 'Guiña un ojo, se agacha y salta detrás de la barra; la cola es lo último que se ve.', [['quieto', 1], ['salida', 1], ['oculto', 1]]],
   ['Aviso completo (pregunta)', 'Entrada, espera y salida seguidas.', [['entrada', 1], ['pregunta', 2], ['salida', 1], ['oculto', 1]]],
   ['Aviso completo (permiso)', 'Entrada, espera y salida seguidas.', [['entrada', 1], ['permiso', 2], ['salida', 1], ['oculto', 1]]],
+  ['Aviso completo (terminado)', 'Entrada, espera y salida seguidas.', [['entrada', 1], ['terminado', 2], ['salida', 1], ['oculto', 1]]],
 ];
 const players = SCENES.map(([title, desc, seq]) => {
   const fig = document.createElement('figure'), cv = document.createElement('canvas');

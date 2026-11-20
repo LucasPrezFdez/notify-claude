@@ -1,6 +1,6 @@
 # notify-claude
 
-Un gato esmoquin en pixel art que asoma por la barra de tareas cuando Claude Code te hace una pregunta o te pide permiso, y se despide en cuanto respondes. Así no se te queda Claude esperando en un terminal que no estás mirando.
+Un gato esmoquin en pixel art que asoma por la barra de tareas cuando Claude Code te hace una pregunta o te pide permiso, y se despide en cuanto respondes. También te avisa cuando Claude termina un trabajo largo. Así no se te queda Claude esperando en un terminal que no estás mirando.
 
 Es un mod de Claude Code y una pequeña app de Windows escrita en Rust. Solo funciona en Windows.
 
@@ -26,10 +26,12 @@ Contesta `y` para añadir el marketplace y elige dónde instalarlo (con Enter, p
 | --- | --- | --- |
 | Pregunta | Cuando Claude te pregunta algo (`AskUserQuestion`) | En cuanto respondes |
 | Permiso | Cuando sale el diálogo de permiso | Al permitirlo o rechazarlo |
+| Terminado | Cuando Claude acaba de responder tras 30 s o más trabajando sin ti | Solo, unos 10 s después |
 
-- El bocadillo dice qué pasa ("¿Puedo usar Bash?", o el principio de la pregunta) y de qué carpeta viene el aviso.
+- El bocadillo dice qué pasa ("¿Puedo usar Bash?", el principio de la pregunta o "¡He terminado!") y de qué carpeta viene el aviso.
+- Los 30 s del aviso de terminado se cuentan desde lo último que hiciste tú: escribir el prompt, responder una pregunta o un permiso. El rato que Claude pasa esperándote no cuenta. Tampoco avisa si interrumpes el turno, si acaba en error o si quien termina es un subagente.
 - Si lo pulsas, guiña un ojo y se va.
-- También se va si escribes otro prompt, termina el turno o cierras la sesión.
+- También se va si escribes otro prompt o cierras la sesión, y la pregunta o el permiso, si termina el turno.
 - Con varios terminales a la vez, solo se ve el último aviso.
 - Aparece en el monitor de la ventana activa, en la esquina inferior derecha, encima de la barra de tareas. No te quita el foco y los clics atraviesan lo transparente.
 
@@ -58,7 +60,7 @@ notify-claude/
 └── INVESTIGACION.md                  el diseño, con lo que se decidió y por qué
 ```
 
-El mod lanza `mascota.exe --kind permiso|pregunta --session <id> --message <texto> --cwd <ruta>` para avisar y `mascota.exe --dismiss --session <id>` para despedirlo. La app es de instancia única: si ya hay un gato en pantalla, la segunda copia le pasa el aviso y se cierra.
+El mod lanza `mascota.exe --kind permiso|pregunta|terminado --session <id> --message <texto> --cwd <ruta>` para avisar y `mascota.exe --dismiss --session <id>` para despedirlo. La app es de instancia única: si ya hay un gato en pantalla, la segunda copia le pasa el aviso y se cierra.
 
 ## Desarrollo
 
@@ -78,7 +80,7 @@ claude --plugin-dir ./plugin
 Pruebas:
 
 ```
-cargo test --manifest-path desktop/Cargo.toml   # la app, incluida la paridad de los 714 fotogramas con sprites/gato.js
+cargo test --manifest-path desktop/Cargo.toml   # la app, incluida la paridad de los 858 fotogramas con sprites/gato.js
 claude plugin test ./plugin                     # el mod
 claude plugin validate .                        # el marketplace y el manifiesto
 node sprites/vista-previa.js                    # genera sprites/salida/animaciones.html

@@ -211,6 +211,7 @@ El `name` de la entrada tiene que coincidir con el de `plugin.json`. Instalado d
 - Se cierra cuando el programador **pulsa en la mascota** (señal de que lo ha visto) o cuando **hace lo que el agente necesitaba**.
 - La mascota es **literalmente la de Claude Code**, y tanto ella como el bocadillo del mensaje van **dibujados en pixel art**. Es un requisito clave.
 - **Solo avisa cuando Claude te pregunta algo (`AskUserQuestion`) o te pide permiso.** No avisa cuando termina, ni cuando un servidor MCP pide datos (`elicitation_dialog`), por ejemplo al conectarlo.
+  - **Cambiado el 20-11-2026**: también avisa cuando Claude termina después de trabajar un buen rato sin ti. Ver "Aviso de terminado" más abajo.
 - **Aparece aunque estés mirando el terminal**, porque así se ve que el plugin funciona. Habrá una opción para desactivarla.
 - **Si llegan varios avisos, solo se muestra el último.**
 
@@ -258,7 +259,7 @@ Transparente, sin bordes, siempre encima, sin icono en la barra de tareas y deja
 3. Se queda hasta que pasa una de estas dos cosas:
    - **Pulsas en la mascota**: la app se despide y se cierra sola.
    - **Haces lo que el agente necesitaba**: el plugin lanza `app.exe --dismiss --session <id>`. La instancia única (en Win32, un mutex con nombre y `WM_COPYDATA`; en Tauri, `tauri-plugin-single-instance`) le pasa esa orden a la app que ya está abierta, y esta se despide y se cierra.
-4. No hay tiempo límite: si no haces nada, la mascota sigue ahí.
+4. No hay tiempo límite: si no haces nada, la mascota sigue ahí. La excepción es el aviso de terminado, que se va solo (ver "Aviso de terminado").
 
 ### Qué cuenta como "hacer lo que necesitaba"
 
@@ -266,11 +267,24 @@ Transparente, sin bordes, siempre encima, sin icono en la barra de tareas y deja
 | --- | --- | --- | --- |
 | Claude te hace una pregunta (`AskUserQuestion`) | `tool.call` con `tool: 'AskUserQuestion'`, antes de `next(e)` | Que `next(e)` resuelva, porque ya has respondido | ✅ preciso |
 | Necesita permiso | `classic.PermissionRequest`, que salta justo al enseñar el diálogo | Lo primero que llegue: `tool.run` de esa llamada (concedido, antes de ejecutarse), el aviso "ctrl+b to run in background" de Bash (`ui.render` sobre `ToolProgress`: ya corre) o la fila con su resultado (`session.append` por la puerta `tool-result`: concedido y terminado, o rechazado) | ✅ preciso, salvo con Bash y PowerShell (ver abajo) |
-| Cualquiera | — | Cierras la sesión (`session.end`), escribes otro prompt (`prompt.submit`) o termina el turno (`turn.complete`, también cuando lo interrumpes) | ✅ |
+| Claude ha terminado | `turn.complete` del bucle principal con `reason: 'answer'`, tras 30 s o más trabajando sin ti | Nada que hacer: la app se despide sola 10 s después de enseñar el bocadillo | ✅ |
+| Cualquiera | — | Cierras la sesión (`session.end`), escribes otro prompt (`prompt.submit`) o termina el turno (`turn.complete`, también cuando lo interrumpes) sin dar pie a un aviso de terminado | ✅ |
 
 **Resuelto el 20-11-2026** (Claude Code 2.1.329). `tool.run` salta cuando una llamada ya tiene permiso y va a ejecutarse, así que es la señal exacta de "has pulsado Permitir". Pero un hook de `tool.run` o `tool.call` le quita a la herramienta que oye la opción de mandarse a segundo plano (ctrl+b). Por eso el mod solo escucha `tool.run` en las herramientas que no se pueden mandar: Edit, Write, MultiEdit, NotebookEdit, WebFetch, WebSearch y las de MCP. Con Bash y PowerShell, el gato se va cuando aparece su aviso de segundo plano o cuando llega el resultado.
 
 `classic.PermissionRequest` no trae el id de la llamada, así que el mod apunta en `tool.check` las llamadas que el motor va a preguntar (veredicto `ask`) y empareja cada diálogo con la primera pendiente que tenga la misma herramienta y la misma entrada.
+
+### Aviso de terminado (añadido el 20-11-2026)
+
+Lucas pidió que el gato avisara también cuando termina una tarea, y eligió:
+
+- **Cuándo**: solo tras un trabajo largo, cuando Claude lleva **30 s o más trabajando sin ti** (`MIN_TRABAJO_MS` en el mod). Así no salta con cada respuesta corta mientras chateas.
+- **Cómo se cuentan esos 30 s**: desde lo último que hiciste tú. Eso es el inicio del turno (`turn.start`), un mensaje escrito mientras trabaja (`prompt.submit`) o la respuesta a una pregunta o a un permiso del gato. El rato que Claude pasa esperándote no cuenta: si tardas cinco minutos en contestar y Claude acaba 3 s después, no avisa. Si el módulo se ha recargado durante el turno, se usa `durationMs` (el turno entero).
+- **Cuándo no avisa**: si interrumpes el turno (`aborted`), si acaba en error o rechazo, o si quien termina es un subagente (`agentId`).
+- **Texto**: "¡He terminado!", con la carpeta del proyecto debajo, como los demás.
+- **Animación**: una nueva, `terminado`. Cierra los dos ojos sonriendo (^^, con `happyL` además del `happyR` del guiño), da dos saltitos con la cola en alto y balancea la cabeza. Se aprobó viendo la vista previa.
+- **Cuándo se va**: sola, 10 s después de enseñar el bocadillo (`LEAVE_AFTER` en `scene.rs`). También al pulsarla, al escribir otro prompt o al cerrar la sesión. Si encima llega otro aviso de terminado, vuelve a contar los 10 s. Si llega una pregunta o un permiso, el gato ya no se va solo.
+- Sale aunque estés mirando el terminal, como los demás avisos.
 
 ### Varios avisos a la vez: solo el último
 
@@ -440,7 +454,7 @@ Un **mod** es un plugin con un módulo TypeScript (`hooks/register.tsx`) que se 
 > **Cambiado el 10-11-2026**: la mascota ya no es la de Claude Code, sino un **gato esmoquin propio** (blanco y negro, ojos amarillos). Donde las secciones 6 y 7 hablan de la mascota literal, de sus poses (`up`, `one-up`, `wink`…) o del naranja `clawd_body`, manda lo que se dice aquí.
 
 - **Dibujo**: procedural. `sprites/gato.js` convierte una pose continua (respiración, cola, patas, ojos, orejas) en una rejilla de 58×59 píxeles, y define las animaciones a 30 fps: entrada, reposo, pregunta, permiso y salida. `node sprites/vista-previa.js` genera la vista previa en `sprites/salida/animaciones.html`.
-- **App de escritorio**: `desktop/src/cat.rs` y `anim.rs` son un port literal a Rust. `sprites/paridad.txt` guarda un hash por fotograma y las pruebas de la app comprueban que los 714 salen idénticos, así que si se cambia un lado hay que cambiar el otro y regenerar ese archivo.
+- **App de escritorio**: `desktop/src/cat.rs` y `anim.rs` son un port literal a Rust. `sprites/paridad.txt` guarda un hash por fotograma y las pruebas de la app comprueban que los 858 salen idénticos, así que si se cambia un lado hay que cambiar el otro y regenerar ese archivo.
 - **Bocadillo**: blanco roto con borde oscuro y texto en Terminus 6×12, a una escala menor que la del gato (al 100 %, el gato va a 3× y el bocadillo a 2×) para que el texto no ocupe media pantalla.
 - **Terminal**: la franja da como mucho 8 píxeles de alto, así que el gato del terminal será un dibujo aparte, más simple. Se abandona la idea de un único sprite para las dos partes.
 - **Marca**: al ser un dibujo propio, ya no hay que revisar las directrices de marca de Anthropic por la mascota.
@@ -452,7 +466,7 @@ Un **mod** es un plugin con un módulo TypeScript (`hooks/register.tsx`) que se 
 1. **Plugin `notify-claude`** (un mod):
    - Dibuja la mascota en pixel art y la hace pasear encima de la caja de escribir, solo en el terminal.
    - Reacciona cuando Claude trabaja, termina o pide permiso.
-   - Cuando Claude te pregunta algo o te pide permiso, abre la app del escritorio con `$.process.spawn`, salvo que la opción `desktopMascot` esté desactivada.
+   - Cuando Claude te pregunta algo o te pide permiso, abre la app del escritorio con `$.process.spawn`, salvo que la opción `desktopMascot` esté desactivada. También la abre cuando Claude termina tras trabajar un buen rato sin ti (añadido el 20-11-2026).
    - Cuando haces lo que necesitaba, la cierra con `--dismiss`.
 2. **App de escritorio** (Rust + Win32 nativo; ver sección 6):
    - Se abre con cada aviso (opción A).
@@ -473,6 +487,7 @@ Tomadas:
 - [x] Se cierra al pulsar en la mascota (lo has visto) o al hacer lo que el agente necesitaba.
 - [x] Mascota y bocadillo en pixel art. La mascota es un gato esmoquin propio (cambiado el 10-11-2026; antes, la mascota literal de Claude Code). Ver sección 8.
 - [x] La mascota del escritorio solo avisa cuando Claude **pregunta** o **pide permiso**.
+- [x] **Aviso de terminado** (20-11-2026): también avisa cuando Claude termina tras 30 s o más trabajando sin ti, con "¡He terminado!" y una animación propia, y se va sola a los 10 s (sección 6, "Aviso de terminado").
 - [x] Aparece aunque estés mirando el terminal, con una opción para desactivarla.
 - [x] Varios avisos a la vez: solo se muestra el último.
 - [x] Posición, fuente (Terminus), animaciones de entrada, aviso y salida, y texto del bocadillo con icono de carpeta en pixel art (sección 6).

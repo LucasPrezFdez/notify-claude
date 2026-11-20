@@ -5,14 +5,14 @@
     "url": "https://github.com/LucasPrezFdez"
   },
   "metadata": {
-    "description": "notify-claude: un gato en pixel art que te avisa en el escritorio cuando Claude Code te hace una pregunta o te pide permiso."
+    "description": "notify-claude: un gato en pixel art que te avisa en el escritorio cuando Claude Code te hace una pregunta, te pide permiso o termina un trabajo largo."
   },
   "plugins": [
     {
       "name": "notify-claude",
       "source": "./plugin",
-      "description": "Un gato en pixel art asoma por la barra de tareas cuando Claude te hace una pregunta o te pide permiso, y se despide en cuanto respondes. Solo Windows.",
-      "version": "0.1.0",
+      "description": "Un gato en pixel art asoma por la barra de tareas cuando Claude te hace una pregunta o te pide permiso, y se despide en cuanto respondes. También te avisa cuando Claude termina un trabajo largo. Solo Windows.",
+      "version": "0.2.0",
       "category": "productivity"
     }
   ]

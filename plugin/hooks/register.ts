@@ -1,24 +1,30 @@
 // notify-claude: abre el gato del escritorio (bin/mascota.exe) cuando Claude Code te hace
-// una pregunta o te pide permiso, y lo despide en cuanto has respondido.
+// una pregunta o te pide permiso, y lo despide en cuanto has respondido. También avisa
+// cuando Claude termina después de trabajar un buen rato sin ti.
 //
 // Cuándo se abre:
 //   - Pregunta: `tool.call` de AskUserQuestion, antes de que salga el diálogo.
 //   - Permiso: `classic.PermissionRequest`, que salta justo cuando se enseña el diálogo
 //     (en modo auto, solo si el clasificador no lo ha resuelto).
+//   - Terminado: `turn.complete` del bucle principal con respuesta, si Claude llevaba al menos
+//     MIN_TRABAJO_MS trabajando solo: desde que empezó el turno o desde lo último que
+//     respondiste (una pregunta, un permiso o un mensaje mientras trabajaba).
 //
 // Cuándo se cierra, lo primero que llegue:
 //   - Pregunta: el `next(e)` de su `tool.call` resuelve, porque ya has respondido.
 //   - Permiso concedido: `tool.run` de esa llamada, o el aviso "ctrl+b to run in background"
 //     de Bash, que solo sale cuando el comando ya corre.
 //   - Permiso concedido o rechazado: la fila con el resultado de esa llamada (`session.append`).
-//   - Cualquiera: escribes otro prompt, termina el turno o se cierra la sesión.
+//   - Terminado: la app se despide sola al rato.
+//   - Cualquiera: escribes otro prompt, termina el turno (sin aviso de terminado) o se
+//     cierra la sesión.
 //
 // Para saber de qué llamada es cada diálogo, `tool.check` apunta las que el motor va a
 // preguntar, con su id: `classic.PermissionRequest` no lo trae.
 
 import type { EngineInterface, Register } from 'claude-code'
 
-type Tipo = 'pregunta' | 'permiso'
+type Tipo = 'pregunta' | 'permiso' | 'terminado'
 
 /** Un hook de `tool.run` deja sin "mandar a segundo plano" a las herramientas que oye, así
  *  que solo se escuchan las que no se pueden mandar. Bash y PowerShell se cierran con su
@@ -28,12 +34,18 @@ const SIN_SEGUNDO_PLANO = /^(Edit|Write|MultiEdit|NotebookEdit|WebFetch|WebSearc
 /** La app recorta el bocadillo a 3 líneas; esto solo evita mandar textos enormes. */
 const MAX_MENSAJE = 300
 
+/** Lo que tiene que trabajar Claude sin ti para avisar de que ha terminado. */
+const MIN_TRABAJO_MS = 30_000
+
 /** El aviso que esta sesión tiene en pantalla, y la llamada que lo cierra (si se sabe).
  *  Una recarga del módulo lo pierde, pero también mata la app que hubiera lanzado. */
 let visible: { session: string; id: string | undefined } | undefined
 
 /** Llamadas a las que el motor va a pedir permiso, por orden de llegada. */
 const pendientes = new Map<string, { tool: string; input: string }>()
+
+/** Desde cuándo trabaja Claude sin ti en el turno principal (`$.clock.now()`). */
+let desde: number | undefined
 
 export const register: Register = (on, options) => {
   if (options.desktopMascot === false) return
@@ -79,13 +91,29 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('prompt.submit', ($, e, next) => {
+  on('prompt.submit', async ($, e, next) => {
     despedir($)
+    desde = await $.clock.now()
     return next(e)
   })
 
-  on('turn.complete', ($, e, next) => {
-    if (e.agentId === undefined) despedir($)
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) desde = await $.clock.now()
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      // tras una recarga del módulo no se sabe cuándo respondiste: cuenta el turno entero
+      const trabajo = desde === undefined ? e.durationMs : (await $.clock.now()) - desde
+      desde = undefined
+      if (e.reason === 'answer' && trabajo >= MIN_TRABAJO_MS) {
+        const [session, cwd] = await Promise.all([$.session.id(), $.session.cwd()])
+        mostrar($, 'terminado', '¡He terminado!', session, cwd, undefined)
+      } else {
+        despedir($)
+      }
+    }
     return next(e)
   })
 
@@ -107,10 +135,15 @@ function despedir($: EngineInterface) {
   lanzar($, ['--dismiss', '--session', session])
 }
 
-/** La llamada `id` ya no espera al programador. */
+/** La llamada `id` ya no espera al programador. Si era la del aviso, has respondido tú:
+ *  Claude vuelve a trabajar sin ti desde ahora. */
 function resuelta($: EngineInterface, id: string) {
   pendientes.delete(id)
-  if (visible?.id === id) despedir($)
+  if (visible?.id !== id) return
+  despedir($)
+  void $.clock.now().then(t => {
+    if (desde !== undefined) desde = t
+  })
 }
 
 /** Lanza la app con `args`. La app no escribe nada: el bucle solo la mantiene viva, porque

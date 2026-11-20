@@ -1,8 +1,8 @@
 // Pruebas del mod: qué lanzaría (argumentos de mascota.exe) ante cada evento. El
 // `process.spawn` de la prueba solo apunta la orden, así que no se abre ninguna ventana.
 
-import type { On, SessionAppendInput } from 'claude-code'
-import { expect, test } from 'claude-code/testing'
+import type { On, SessionAppendInput, TurnCompleteInput } from 'claude-code'
+import { expect, mock, test } from 'claude-code/testing'
 
 type Orden = string[]
 
@@ -23,7 +23,10 @@ function capturar(on: On) {
   on('session.id', () => ({ value: 'sesion-prueba' }))
   on('session.cwd', () => ({ value: 'C:\\proyectos\\notify-claude' }))
   on('prompt.submit', (_, e) => ({ text: e.text }))
-  return { ordenes, llegan }
+  on('turn.start', (_, e) => ({ turnId: e.turnId }))
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  const reloj = mock.clock(on)
+  return { ordenes, llegan, reloj }
 }
 
 const sesion = (o: Orden | undefined) => o?.[o.indexOf('--session') + 1]
@@ -37,6 +40,25 @@ function filaDeResultado(id: string): SessionAppendInput {
     uuid: `fila-${id}`,
     message: { type: 'user', role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] },
   }
+}
+
+/** El final de un turno del bucle principal que ha durado `ms`. */
+const fin = (ms: number, extra: Partial<TurnCompleteInput> = {}) =>
+  ({ answer: 'listo', durationMs: ms, isAborted: false, turnId: 't1', reason: 'answer', ...extra }) as TurnCompleteInput
+
+const PREGUNTA = {
+  tool: 'AskUserQuestion' as const,
+  questions: [
+    {
+      question: '¿Qué base de datos usamos?',
+      header: 'BD',
+      multiSelect: false,
+      options: [
+        { label: 'SQLite', description: '' },
+        { label: 'Postgres', description: '' },
+      ],
+    },
+  ],
 }
 
 const BASH_OK = { result: { stdout: '', stderr: '', interrupted: false } }
@@ -83,20 +105,7 @@ test('una pregunta abre el gato con su texto y se despide al responder', async (
   const { ordenes, llegan } = capturar(on)
   on('tool.run', () => ({ result: { questions: [], answers: {} } }))
 
-  await $.tool.call({
-    tool: 'AskUserQuestion',
-    questions: [
-      {
-        question: '¿Qué base de datos usamos?',
-        header: 'BD',
-        multiSelect: false,
-        options: [
-          { label: 'SQLite', description: '' },
-          { label: 'Postgres', description: '' },
-        ],
-      },
-    ],
-  })
+  await $.tool.call(PREGUNTA)
   await llegan(2)
   expect(ordenes[0]?.slice(0, 2)).toEqual(['--kind', 'pregunta'])
   expect(ordenes[0]).toContain('¿Qué base de datos usamos?')
@@ -131,4 +140,57 @@ test('con el gato desactivado no se lanza nada', { options: { desktopMascot: fal
 
   await $.tool.call({ tool: 'Bash', command: 'ls' })
   expect(ordenes).toEqual([])
+})
+
+test('tras un turno largo el gato avisa de que ha terminado, y otro prompt lo despide', async ($, on) => {
+  const { ordenes, llegan, reloj } = capturar(on)
+
+  await $.turn.start({ text: 'refactoriza', turnId: 't1' })
+  await reloj.advance(45_000)
+  await $.turn.complete(fin(45_000))
+  await llegan(1)
+  expect(ordenes[0]).toEqual(['--kind', 'terminado', '--session', 'sesion-prueba', '--message', '¡He terminado!', '--cwd', 'C:\\proyectos\\notify-claude'])
+
+  await $.prompt.submit(prompt('gracias'))
+  await llegan(2)
+  expect(ordenes[1]).toEqual(['--dismiss', '--session', 'sesion-prueba'])
+})
+
+test('un turno corto, interrumpido, fallido o de un subagente no avisa', async ($, on) => {
+  const { ordenes, reloj } = capturar(on)
+
+  for (const extra of [{}, { reason: 'aborted', isAborted: true }, { reason: 'error' }, { agentId: 'a1' }] as const) {
+    const largo = Object.keys(extra).length > 0
+    await $.turn.start({ text: 'x', turnId: 't1', ...('agentId' in extra ? extra : {}) })
+    await reloj.advance(largo ? 120_000 : 10_000)
+    await $.turn.complete(fin(largo ? 120_000 : 10_000, extra))
+  }
+  await reloj.settle()
+  expect(ordenes).toEqual([])
+})
+
+test('el rato que tardas en responder una pregunta no cuenta como trabajo', async ($, on) => {
+  const { ordenes, llegan, reloj } = capturar(on)
+  let responder = () => {}
+  const respondida = new Promise<void>(r => (responder = r))
+  on('tool.run', async () => {
+    await respondida
+    return { result: { questions: [], answers: {} } }
+  })
+
+  await $.turn.start({ text: 'x', turnId: 't1' })
+  await reloj.advance(20_000)
+  const llamada = $.tool.call(PREGUNTA)
+  await llegan(1)
+  await reloj.advance(300_000) // cinco minutos sin contestar
+  responder()
+  await llamada
+  await llegan(2)
+  expect(ordenes[1]?.[0]).toBe('--dismiss')
+
+  // 20 s antes de preguntar y 15 s después: ninguno de los dos tramos llega al mínimo
+  await reloj.advance(15_000)
+  await $.turn.complete(fin(335_000))
+  await reloj.settle()
+  expect(ordenes).toHaveLength(2)
 })

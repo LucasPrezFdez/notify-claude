@@ -3,7 +3,7 @@ const GW = 58, GH = 59, OY = 10, CX = 23.5, FLOOR = 46, FPS = 30;
 const lerp = (a, b, t) => a + (b - a) * t;
 
 function drawCat(q = {}) {
-  const p = Object.assign({ b: 0, br: 0, hx: 0, pawL: null, pawR: null, eyeL: 1, eyeR: 1, happyR: false, look: 0, pupil: 1.1, earL: [0, 0], earR: [0, 0] }, q);
+  const p = Object.assign({ b: 0, br: 0, hx: 0, pawL: null, pawR: null, eyeL: 1, eyeR: 1, happyL: false, happyR: false, look: 0, pupil: 1.1, earL: [0, 0], earR: [0, 0] }, q);
   const tl = Object.assign({ a: 0, tb: 0, up: 0 }, q.tail);
   const g = Array.from({ length: GH }, () => Array.from({ length: GW }, () => null));
   let ox = 0, oy = 0;
@@ -88,7 +88,7 @@ function drawCat(q = {}) {
   ellipse(CX, 20.6, 6.6, 4.3, 'head', 'W', { only: ['head'] });
   // ojos
   both((m, s) => {
-    const open = s === 'L' ? p.eyeL : p.eyeR, happy = s === 'R' && p.happyR;
+    const open = s === 'L' ? p.eyeL : p.eyeR, happy = s === 'R' ? p.happyR : p.happyL;
     const ex = m(16.5), ey = 15.5, x0 = Math.floor(ex) - 2;
     if (open < 0.15) { for (let i = 0; i < 6; i++) { const mid = i > 0 && i < 5; put(x0 + i, 16 + (happy ? (mid ? -1 : 0) : (mid ? 1 : 0)), 'eye', 'L'); } return; }
     const cutTop = 13 + Math.round((1 - open) * 3), cutBot = 18 - Math.round((1 - open) * 1.4), pcx = ex + Math.round(p.look);
@@ -165,6 +165,8 @@ const TAU = Math.PI * 2, PER = 3.2;
 // capa de reposo (respiración y cola con la punta retrasada); w la atenúa
 const idle = (T, w = 1) => ({ br: (0.5 - 0.5 * Math.cos(TAU * T / PER)) * w, tail: { a: 1.2 * Math.sin(TAU * T / PER) * w, tb: 1.5 * Math.sin(TAU * T / PER - 1.0) * w, up: 0 } });
 const ear = f => [2.5 * f, 3 * f];
+// saltito parabólico de altura h que empieza en t0 y dura d
+const hop = (t, t0, d, h) => { const u = (t - t0) / d; return u <= 0 || u >= 1 ? 0 : -h * 4 * u * (1 - u); };
 
 const ANIMS = {
   quieto: { dur: 1.2, fn: (t, T) => ({ dy: 0, pose: idle(T) }) },
@@ -225,6 +227,20 @@ const ANIMS = {
     pose.pupil = tr(t, [[0.1, 1.1], [0.6, 1.8], [4.4, 1.8], [4.9, 1.1]]);
     const e = Math.min(blink(t, 2.4, 0.3), blink(t, 4.15, 0.26)); pose.eyeL = e; pose.eyeR = e;
     return { dy: 0, pose };
+  } },
+
+  terminado: { dur: 4.8, fn: (t, T) => {
+    // contento: cierra los ojos sonriendo, da dos saltitos con la cola en alto y se balancea
+    const pose = idle(T);
+    pose.happyL = true; pose.happyR = true;
+    const e = tr(t, [[0.1, 1], [0.3, 0], [3.9, 0], [4.25, 1]]); pose.eyeL = e; pose.eyeR = e;
+    pose.b = tr(t, [[0.3, 0], [0.5, 1.0], [0.6, -0.9, 'out'], [0.85, -0.4], [0.95, 1.1, 'out'], [1.1, -0.2], [1.25, 0.9], [1.35, -0.8, 'out'], [1.6, -0.3], [1.7, 1.0, 'out'], [1.85, -0.2], [2.0, 0]]);
+    const f = tr(t, [[0.3, 0], [0.5, 0.5], [0.6, 0, 'back'], [0.95, 0.6], [1.1, 0], [1.25, 0.4], [1.35, 0, 'back'], [1.7, 0.6], [1.9, 0, 'back']]);
+    pose.earL = ear(f); pose.earR = [ear(f)[0] + 1.6 * pulse(t, 2.8), ear(f)[1] + 0.6 * pulse(t, 2.8)];
+    pose.tail.up = tr(t, [[0.5, 0], [0.9, 0.85], [3.6, 0.85], [4.2, 0]]);
+    const env = tr(t, [[2.0, 0], [2.3, 1], [3.3, 1], [3.6, 0]]);
+    pose.hx = 1.2 * env * Math.sin(TAU * 0.8 * (t - 2.1));
+    return { dy: hop(t, 0.6, 0.35, 5) + hop(t, 1.35, 0.35, 4), pose };
   } },
 
   salida: { dur: 1.9, fn: (t, T) => {

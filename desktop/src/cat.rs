@@ -74,6 +74,8 @@ pub struct Pose {
     pub paw_r: Option<Paw>,
     pub eye_l: f64,
     pub eye_r: f64,
+    /// Ojo cerrado sonriendo (un arco hacia arriba) en lugar de una raya.
+    pub happy_l: bool,
     pub happy_r: bool,
     pub look: f64,
     pub pupil: f64,
@@ -94,6 +96,7 @@ impl Default for Pose {
             paw_r: None,
             eye_l: 1.0,
             eye_r: 1.0,
+            happy_l: false,
             happy_r: false,
             look: 0.0,
             pupil: 1.1,
@@ -333,7 +336,7 @@ pub fn draw_cat(p: &Pose) -> Frame {
     // ojos
     for s in SIDES {
         let open = if s == Side::L { p.eye_l } else { p.eye_r };
-        let happy = s == Side::R && p.happy_r;
+        let happy = if s == Side::R { p.happy_r } else { p.happy_l };
         let (ex, ey) = (s.m(16.5), 15.5);
         let x0 = ex.floor() as i32 - 2;
         if open < 0.15 {

@@ -78,6 +78,12 @@ fn ear(f: f64) -> [f64; 2] {
     [2.5 * f, 3.0 * f]
 }
 
+/// Saltito parabólico de altura `h` que empieza en `t0` y dura `d`.
+fn hop(t: f64, t0: f64, d: f64, h: f64) -> f64 {
+    let u = (t - t0) / d;
+    if u <= 0.0 || u >= 1.0 { 0.0 } else { -h * 4.0 * u * (1.0 - u) }
+}
+
 // Quieto, Oculto y Reposo solo se usan, de momento, en la prueba de paridad.
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -88,6 +94,7 @@ pub enum Anim {
     Entrada,
     Pregunta,
     Permiso,
+    Terminado,
     Salida,
 }
 
@@ -100,6 +107,7 @@ impl Anim {
             Anim::Entrada => 3.4,
             Anim::Pregunta => 4.8,
             Anim::Permiso => 5.2,
+            Anim::Terminado => 4.8,
             Anim::Salida => 1.9,
         }
     }
@@ -110,6 +118,7 @@ impl Anim {
         match self {
             Anim::Pregunta => 4.3,
             Anim::Permiso => 4.45,
+            Anim::Terminado => 3.6,
             _ => 0.0,
         }
     }
@@ -123,6 +132,7 @@ impl Anim {
             "entrada" => Anim::Entrada,
             "pregunta" => Anim::Pregunta,
             "permiso" => Anim::Permiso,
+            "terminado" => Anim::Terminado,
             "salida" => Anim::Salida,
             _ => return None,
         })
@@ -230,6 +240,26 @@ pub fn frame_at(a: Anim, t: f64, tg: f64) -> (Pose, i32) {
             p.eye_l = e;
             p.eye_r = e;
             (p, 0.0)
+        }
+        Anim::Terminado => {
+            // contento: cierra los ojos sonriendo, da dos saltitos con la cola en alto y se balancea
+            let mut p = idle(tg, 1.0);
+            p.happy_l = true;
+            p.happy_r = true;
+            let e = tr(t, &[(0.1, 1.0, Io), (0.3, 0.0, Io), (3.9, 0.0, Io), (4.25, 1.0, Io)]);
+            p.eye_l = e;
+            p.eye_r = e;
+            p.b = tr(
+                t,
+                &[(0.3, 0.0, Io), (0.5, 1.0, Io), (0.6, -0.9, Out), (0.85, -0.4, Io), (0.95, 1.1, Out), (1.1, -0.2, Io), (1.25, 0.9, Io), (1.35, -0.8, Out), (1.6, -0.3, Io), (1.7, 1.0, Out), (1.85, -0.2, Io), (2.0, 0.0, Io)],
+            );
+            let f = tr(t, &[(0.3, 0.0, Io), (0.5, 0.5, Io), (0.6, 0.0, Back), (0.95, 0.6, Io), (1.1, 0.0, Io), (1.25, 0.4, Io), (1.35, 0.0, Back), (1.7, 0.6, Io), (1.9, 0.0, Back)]);
+            p.ear_l = ear(f);
+            p.ear_r = [ear(f)[0] + 1.6 * pulse(t, 2.8), ear(f)[1] + 0.6 * pulse(t, 2.8)];
+            p.tail_up = tr(t, &[(0.5, 0.0, Io), (0.9, 0.85, Io), (3.6, 0.85, Io), (4.2, 0.0, Io)]);
+            let env = tr(t, &[(2.0, 0.0, Io), (2.3, 1.0, Io), (3.3, 1.0, Io), (3.6, 0.0, Io)]);
+            p.hx = 1.2 * env * (TAU * 0.8 * (t - 2.1)).sin();
+            (p, hop(t, 0.6, 0.35, 5.0) + hop(t, 1.35, 0.35, 4.0))
         }
         Anim::Salida => {
             let mut p = idle(tg, tr(t, &[(0.6, 1.0, Io), (0.95, 0.0, Io)]));

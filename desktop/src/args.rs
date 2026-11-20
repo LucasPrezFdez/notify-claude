@@ -1,7 +1,7 @@
 //! Lo que se le pide a la app por la línea de órdenes, y cómo viaja a la instancia abierta.
 //!
 //! ```text
-//! mascota --kind pregunta|permiso --session <id> [--message <texto>] [--project <nombre> | --cwd <ruta>]
+//! mascota --kind pregunta|permiso|terminado --session <id> [--message <texto>] [--project <nombre> | --cwd <ruta>]
 //! mascota --dismiss --session <id>
 //! ```
 
@@ -31,6 +31,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Request, String>
                 kind = Some(match value("--kind")?.as_str() {
                     "pregunta" | "question" => Kind::Pregunta,
                     "permiso" | "permission" => Kind::Permiso,
+                    "terminado" | "done" => Kind::Terminado,
                     other => return Err(format!("tipo de aviso desconocido: {other}")),
                 })
             }
@@ -44,11 +45,12 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Request, String>
     if dismiss {
         return Ok(Request::Dismiss { session });
     }
-    let kind = kind.ok_or("hace falta --kind pregunta|permiso o --dismiss")?;
+    let kind = kind.ok_or("hace falta --kind pregunta|permiso|terminado o --dismiss")?;
     let message = message.filter(|m| !m.trim().is_empty()).unwrap_or_else(|| {
         match kind {
             Kind::Pregunta => "Tengo una pregunta",
             Kind::Permiso => "Necesito tu permiso",
+            Kind::Terminado => "¡He terminado!",
         }
         .to_string()
     });
@@ -58,10 +60,7 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Request, String>
 impl Request {
     pub fn encode(&self) -> String {
         match self {
-            Request::Show { kind, session, message, project } => {
-                let k = if *kind == Kind::Pregunta { "pregunta" } else { "permiso" };
-                [k, session, message, project].join(&SEP.to_string())
-            }
+            Request::Show { kind, session, message, project } => [kind.name(), session, message, project].join(&SEP.to_string()),
             Request::Dismiss { session } => ["dismiss", session].join(&SEP.to_string()),
         }
     }
@@ -70,8 +69,8 @@ impl Request {
         let f: Vec<&str> = s.split(SEP).collect();
         match f.as_slice() {
             ["dismiss", session] => Some(Request::Dismiss { session: session.to_string() }),
-            [k @ ("pregunta" | "permiso"), session, message, project] => Some(Request::Show {
-                kind: if *k == "pregunta" { Kind::Pregunta } else { Kind::Permiso },
+            [k, session, message, project] => Some(Request::Show {
+                kind: Kind::from_name(k)?,
                 session: session.to_string(),
                 message: message.to_string(),
                 project: project.to_string(),
@@ -102,6 +101,13 @@ mod tests {
     }
 
     #[test]
+    fn aviso_de_terminado() {
+        let Request::Show { kind, message, .. } = p(&["--kind", "terminado", "--session", "abc"]).unwrap() else { panic!() };
+        assert_eq!((kind, message.as_str()), (Kind::Terminado, "¡He terminado!"));
+        assert_eq!(p(&["--kind", "done"]).unwrap(), p(&["--kind", "terminado"]).unwrap());
+    }
+
+    #[test]
     fn cierre() {
         assert_eq!(p(&["--dismiss", "--session", "abc"]).unwrap(), Request::Dismiss { session: "abc".into() });
     }
@@ -116,9 +122,14 @@ mod tests {
 
     #[test]
     fn ida_y_vuelta() {
-        for r in [p(&["--kind", "pregunta", "--session", "s 1", "--message", "¿Qué hago?\ncon dos líneas", "--project", "x"]).unwrap(), p(&["--dismiss", "--session", "s"]).unwrap()] {
+        for r in [
+            p(&["--kind", "pregunta", "--session", "s 1", "--message", "¿Qué hago?\ncon dos líneas", "--project", "x"]).unwrap(),
+            p(&["--kind", "terminado", "--session", "s", "--project", "notify-claude"]).unwrap(),
+            p(&["--dismiss", "--session", "s"]).unwrap(),
+        ] {
             assert_eq!(Request::decode(&r.encode()), Some(r));
         }
         assert_eq!(Request::decode("basura"), None);
+        assert_eq!(Request::decode(&["otro", "s", "m", "p"].join(&SEP.to_string())), None);
     }
 }
