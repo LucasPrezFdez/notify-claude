@@ -484,7 +484,8 @@ Pendientes:
 
 - [x] ~~Marca de Anthropic~~: resuelto el 10-11-2026 al cambiar la mascota por un gato propio.
 - [ ] **Gato del terminal**: dibujar la versión pequeña (8 píxeles de alto como mucho) para la franja de encima de la caja de escribir.
-- [ ] **Cómo viaja el `.exe`**: subido al repositorio en `plugin/bin/` o publicado en una release de GitHub. Mientras tanto, `plugin/bin/` está en `.gitignore` y se copia a mano desde `desktop/target/release/`.
+- [x] **Cómo viaja el `.exe`** (decidido el 20-11-2026): subido al repositorio en `plugin/bin/`. Se instala y funciona sin red; cada versión añade unos 180 KB al historial. Con una release, el mod tendría que descargar y lanzar un ejecutable. Tras cambiar la app hay que recompilarla y copiarla ahí (README, "Desarrollo").
+- [x] **Publicación** (decidido el 20-11-2026): el propio repositorio es el marketplace (`.claude-plugin/marketplace.json`, con `source: ./plugin`), con licencia MIT. Por ahora no se envía al directorio oficial de Anthropic. El icono para ese directorio ya está hecho: `plugin/.claude-plugin/icon.png`, generado con `node sprites/icono.js`. Si se enviara, el validador avisa de que el nombre `notify-claude` "parece de Anthropic".
 
 ## 11. No verificado
 

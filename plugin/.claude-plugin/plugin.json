@@ -5,6 +5,7 @@
   "author": { "name": "Lucas" },
   "homepage": "https://github.com/LucasPrezFdez/notify-claude",
   "repository": "https://github.com/LucasPrezFdez/notify-claude",
+  "license": "MIT",
   "keywords": ["avisos", "mascota", "pixel-art", "windows", "mod"],
   "userConfig": {
     "desktopMascot": {
