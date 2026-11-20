@@ -265,13 +265,12 @@ Transparente, sin bordes, siempre encima, sin icono en la barra de tareas y deja
 | Aviso | Qué lo abre | Qué lo cierra | Fiabilidad |
 | --- | --- | --- | --- |
 | Claude te hace una pregunta (`AskUserQuestion`) | `tool.call` con `tool: 'AskUserQuestion'`, antes de `next(e)` | Que `next(e)` resuelva, porque ya has respondido | ✅ preciso |
-| Necesita permiso | `classic.Notification` con `permission_prompt`, o `PermissionRequest` | Que la llamada continúe. En el mod, el `next(e)` de `tool.call` incluye el diálogo de permiso **y** la ejecución de la herramienta, así que resuelve cuando la herramienta termina | ⚠️ Con una herramienta larga, la mascota se iría al acabar la herramienta, no al pulsar "Permitir". Falta encontrar una señal del momento exacto |
-| Cualquiera | — | Interrumpes (`turn.abort`), cierras la sesión (`session.end`), escribes otro prompt (`prompt.submit`) o termina el turno (`turn.complete`) | ✅ |
+| Necesita permiso | `classic.PermissionRequest`, que salta justo al enseñar el diálogo | Lo primero que llegue: `tool.run` de esa llamada (concedido, antes de ejecutarse), el aviso "ctrl+b to run in background" de Bash (`ui.render` sobre `ToolProgress`: ya corre) o la fila con su resultado (`session.append` por la puerta `tool-result`: concedido y terminado, o rechazado) | ✅ preciso, salvo con Bash y PowerShell (ver abajo) |
+| Cualquiera | — | Cierras la sesión (`session.end`), escribes otro prompt (`prompt.submit`) o termina el turno (`turn.complete`, también cuando lo interrumpes) | ✅ |
 
-Como el permiso es uno de los dos avisos, merece la pena buscar una señal más temprana que el final de la herramienta. Candidatas por investigar:
+**Resuelto el 20-11-2026** (Claude Code 2.1.329). `tool.run` salta cuando una llamada ya tiene permiso y va a ejecutarse, así que es la señal exacta de "has pulsado Permitir". Pero un hook de `tool.run` o `tool.call` le quita a la herramienta que oye la opción de mandarse a segundo plano (ctrl+b). Por eso el mod solo escucha `tool.run` en las herramientas que no se pueden mandar: Edit, Write, MultiEdit, NotebookEdit, WebFetch, WebSearch y las de MCP. Con Bash y PowerShell, el gato se va cuando aparece su aviso de segundo plano o cuando llega el resultado.
 
-- Que se dibuje el progreso de la herramienta (`ui.render` sobre `ToolProgress`): con Bash, sale en cuanto empieza a ejecutarse.
-- Las filas que se añaden a la conversación (`session.append`).
+`classic.PermissionRequest` no trae el id de la llamada, así que el mod apunta en `tool.check` las llamadas que el motor va a preguntar (veredicto `ask`) y empareja cada diálogo con la primera pendiente que tenga la misma herramienta y la misma entrada.
 
 ### Varios avisos a la vez: solo el último
 
@@ -324,7 +323,7 @@ Es justo el tipo de ventana para el que Microsoft desaconseja WebView2 (el motor
 ### Cómo la lanza y la cierra el plugin
 
 - **Desde el mod** (sección 7), que es lo recomendado porque ve todos los eventos de la tabla anterior:
-  - Para abrir: `$.process.spawn({ argv: [rutaApp, "--kind", "done", "--session", id, ...] })`.
+  - Para abrir: `$.process.spawn({ argv: [rutaApp, "--kind", "permiso", "--session", id, ...] })`, o `"pregunta"`.
   - Para cerrar: el mismo comando con `--dismiss`.
   - Solo funciona en la CLI, que es donde se usa.
 - **Con hooks clásicos**: `Notification`, `PermissionRequest`, `PreToolUse`/`PostToolUse` con `AskUserQuestion` y `UserPromptSubmit`, en forma exec, con `command` apuntando al `.exe` de la app. Es más engorroso que el mod.
@@ -460,7 +459,7 @@ Un **mod** es un plugin con un módulo TypeScript (`hooks/register.tsx`) que se 
    - La mascota aparece y muestra un bocadillo en pixel art.
    - Se cierra al pulsar en la mascota o al recibir `--dismiss`.
    - Instancia única: el aviso nuevo sustituye al que se esté viendo, y solo se muestra el último.
-3. Un solo sprite con la mascota literal de Claude Code (fotogramas y colores), compartido por las dos partes.
+3. Un gato esmoquin propio en pixel art. El del escritorio está hecho; el del terminal será un dibujo aparte, más pequeño (sección 8).
 
 ## 10. Decisiones
 
@@ -485,6 +484,7 @@ Pendientes:
 
 - [x] ~~Marca de Anthropic~~: resuelto el 10-11-2026 al cambiar la mascota por un gato propio.
 - [ ] **Gato del terminal**: dibujar la versión pequeña (8 píxeles de alto como mucho) para la franja de encima de la caja de escribir.
+- [ ] **Cómo viaja el `.exe`**: subido al repositorio en `plugin/bin/` o publicado en una release de GitHub. Mientras tanto, `plugin/bin/` está en `.gitignore` y se copia a mano desde `desktop/target/release/`.
 
 ## 11. No verificado
 
@@ -494,9 +494,10 @@ Pendientes:
 - Cuándo saltan `agent_needs_input` y `agent_completed`.
 - Fluidez de la animación de la franja en Windows Terminal.
 - Cómo se comportan en la práctica el `[-]`, el plegado y las encuestas con la mascota dibujada.
-- Si un mismo plugin puede tener hooks clásicos (`"hooks"`) y un módulo de mod (`"modules"`) a la vez. Si no, el mod oye los mismos eventos con `classic.Stop` y `classic.Notification`.
 - Tiempo de arranque de la app en la opción A.
-- Una señal del momento exacto en que respondes a un permiso (con lo visto hasta ahora, solo se sabe cuándo termina la herramienta). Candidatas: `ui.render` sobre `ToolProgress` y `session.append`.
+- En modo auto, si `classic.PermissionRequest` salta solo cuando el clasificador no ha resuelto la llamada y se enseña el diálogo, o también antes. Si salta antes, el gato asomaría un instante en llamadas que el clasificador aprueba solo.
+- Cuánto tarda en salir el aviso de segundo plano de Bash. Si sale enseguida, el gato se va casi al pulsar "Permitir"; si no, se va al terminar el comando.
+- Que `$.process.spawn` mantenga viva la app hasta que se despide. La documentación dice que el hijo muere al salir del bucle, al abortarse el hook o al recargarse el módulo, y nada más. Por eso, si interrumpes el turno mientras hay una pregunta, la app desaparece de golpe, sin guiño.
 - Tiempos reales de arranque en este equipo de Rust + Win32 frente a Tauri: no hay datos fiables publicados.
 - Si softbuffer admite transparencia por píxel en Windows.
 - La cobertura de Latin-1 de Cozette, que es una de las alternativas.

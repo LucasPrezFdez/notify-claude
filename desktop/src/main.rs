@@ -249,7 +249,9 @@ unsafe fn run(kind: Kind, session: String, message: &str, project: &str) {
     }));
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, app as isize);
     (*app).render();
-    ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    // No con ShowWindow: si quien lanza la app pide arrancarla oculta (STARTF_USESHOWWINDOW,
+    // como hace un `spawn` con `windowsHide`), Windows aplica eso a su primera llamada.
+    SetWindowPos(hwnd, null_mut(), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
     // El temporizador de Windows va a saltos de ~15 ms; con 1 ms de resolución los 30 fps
     // salen regulares. La animación va por tiempo real, así que un tick tardío no la frena.

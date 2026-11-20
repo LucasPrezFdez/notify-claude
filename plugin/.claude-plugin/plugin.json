@@ -1,0 +1,17 @@
+{
+  "name": "notify-claude",
+  "version": "0.1.0",
+  "description": "Un gato en pixel art te avisa en el escritorio cuando Claude Code te hace una pregunta o te pide permiso.",
+  "author": { "name": "Lucas" },
+  "homepage": "https://github.com/LucasPrezFdez/notify-claude",
+  "repository": "https://github.com/LucasPrezFdez/notify-claude",
+  "keywords": ["avisos", "mascota", "pixel-art", "windows", "mod"],
+  "userConfig": {
+    "desktopMascot": {
+      "type": "boolean",
+      "title": "Gato en el escritorio",
+      "description": "Abre el gato en el escritorio cuando Claude te hace una pregunta o te pide permiso. Desactivado, no se abre nada.",
+      "default": true
+    }
+  }
+}
