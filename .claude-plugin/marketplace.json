@@ -12,7 +12,7 @@
       "name": "notify-claude",
       "source": "./plugin",
       "description": "Un gato en pixel art asoma por la barra de tareas cuando Claude te hace una pregunta o te pide permiso, y se despide en cuanto respondes. También te avisa cuando Claude termina un trabajo largo. Solo Windows.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "category": "productivity"
     }
   ]

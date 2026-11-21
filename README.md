@@ -30,12 +30,14 @@ Contesta `y` para añadir el marketplace y elige dónde instalarlo (con Enter, p
 
 - El bocadillo dice qué pasa ("¿Puedo usar Bash?", el principio de la pregunta o "¡He terminado!") y de qué carpeta viene el aviso.
 - Los 30 s del aviso de terminado se cuentan desde lo último que hiciste tú: escribir el prompt, responder una pregunta o un permiso. El rato que Claude pasa esperándote no cuenta. Tampoco avisa si interrumpes el turno, si acaba en error o si quien termina es un subagente.
-- Si lo pulsas, guiña un ojo y se va.
+- Si lo pulsas, guiña un ojo, se va y te trae el terminal de esa sesión: la ventana vuelve con su tamaño si estaba minimizada, se pone delante y, en Windows Terminal, cambia a la pestaña de esa sesión.
 - También se va si escribes otro prompt o cierras la sesión, y la pregunta o el permiso, si termina el turno.
 - Con varios terminales a la vez, solo se ve el último aviso.
 - Aparece en el monitor de la ventana activa, en la esquina inferior derecha, encima de la barra de tareas. No te quita el foco y los clics atraviesan lo transparente.
 
 Con Bash y PowerShell, el gato se va cuando aparece su aviso de «ctrl+b to run in background» o cuando el comando termina. Claude Code no da el momento exacto en que pulsas "Permitir" sin quitarle a esas herramientas la opción de mandarse a segundo plano.
+
+La pestaña se busca por su título, que pone Claude Code. Si la has renombrado a mano, el gato trae la ventana pero no cambia de pestaña; si dos pestañas se llaman igual, elige la primera. Traer el terminal funciona en Windows Terminal y en la consola clásica de Windows. En el terminal de VS Code, el gato solo se despide.
 
 ## Opciones
 
@@ -43,7 +45,7 @@ En `/config`, **Gato en el escritorio** lo activa o lo desactiva (activado de se
 
 ## Requisitos
 
-- Windows 11 (probado). La app es Win32 nativa y pesa unos 180 KB.
+- Windows 11 (probado). La app es Win32 nativa y pesa unos 215 KB.
 - Claude Code con soporte de mods. Probado con la 2.1.329; la API de mods todavía puede cambiar entre versiones.
 
 ## Cómo está hecho
@@ -60,7 +62,7 @@ notify-claude/
 └── INVESTIGACION.md                  el diseño, con lo que se decidió y por qué
 ```
 
-El mod lanza `mascota.exe --kind permiso|pregunta|terminado --session <id> --message <texto> --cwd <ruta>` para avisar y `mascota.exe --dismiss --session <id>` para despedirlo. La app es de instancia única: si ya hay un gato en pantalla, la segunda copia le pasa el aviso y se cierra.
+El mod lanza `mascota.exe --kind permiso|pregunta|terminado --session <id> --message <texto> --cwd <ruta>` para avisar y `mascota.exe --dismiss --session <id>` para despedirlo. La app es de instancia única: si ya hay un gato en pantalla, la segunda copia le pasa el aviso y se cierra. Cada aviso lleva también el PID de la sesión de Claude Code que lo manda, que la app busca entre sus procesos padre al lanzarse; al pulsar al gato, se engancha un momento a la consola de esa sesión para saber su ventana y el título de su pestaña, y elige la pestaña con UI Automation.
 
 ## Desarrollo
 

@@ -1,6 +1,6 @@
 {
   "name": "notify-claude",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Un gato en pixel art te avisa en el escritorio cuando Claude Code te hace una pregunta, te pide permiso o termina un trabajo largo.",
   "author": { "name": "Lucas" },
   "homepage": "https://github.com/LucasPrezFdez/notify-claude",

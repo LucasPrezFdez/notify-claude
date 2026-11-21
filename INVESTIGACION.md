@@ -257,7 +257,7 @@ Transparente, sin bordes, siempre encima, sin icono en la barra de tareas y deja
 1. Claude te pregunta algo o te pide permiso, y el plugin lanza `app.exe --kind <tipo> --session <id> --message "..."`.
 2. La app se abre, la mascota entra (por ejemplo, por la esquina inferior derecha) y muestra el bocadillo.
 3. Se queda hasta que pasa una de estas dos cosas:
-   - **Pulsas en la mascota**: la app se despide y se cierra sola.
+   - **Pulsas en la mascota**: la app se despide, trae al frente el terminal de esa sesión (ver "Traer el terminal al pulsar") y se cierra sola.
    - **Haces lo que el agente necesitaba**: el plugin lanza `app.exe --dismiss --session <id>`. La instancia única (en Win32, un mutex con nombre y `WM_COPYDATA`; en Tauri, `tauri-plugin-single-instance`) le pasa esa orden a la app que ya está abierta, y esta se despide y se cierra.
 4. No hay tiempo límite: si no haces nada, la mascota sigue ahí. La excepción es el aviso de terminado, que se va solo (ver "Aviso de terminado").
 
@@ -285,6 +285,17 @@ Lucas pidió que el gato avisara también cuando termina una tarea, y eligió:
 - **Animación**: una nueva, `terminado`. Cierra los dos ojos sonriendo (^^, con `happyL` además del `happyR` del guiño), da dos saltitos con la cola en alto y balancea la cabeza. Se aprobó viendo la vista previa.
 - **Cuándo se va**: sola, 10 s después de enseñar el bocadillo (`LEAVE_AFTER` en `scene.rs`). También al pulsarla, al escribir otro prompt o al cerrar la sesión. Si encima llega otro aviso de terminado, vuelve a contar los 10 s. Si llega una pregunta o un permiso, el gato ya no se va solo.
 - Sale aunque estés mirando el terminal, como los demás avisos.
+
+### Traer el terminal al pulsar (añadido el 21-11-2026)
+
+Lucas pidió que, al pulsar al gato, saliera el terminal donde se está trabajando, y eligió **traerlo al frente con su tamaño**: si está minimizado vuelve como estaba (también maximizado, si lo estaba), sin ponerlo a pantalla completa.
+
+- **El problema de las pestañas**: Lucas trabaja con varias sesiones de Claude en pestañas de una misma ventana de Windows Terminal. Traer solo la ventana podía enseñar la pestaña de otra sesión, así que también se cambia de pestaña.
+- **Qué sesión es**: al lanzarse, `mascota.exe` sube por sus procesos padre (Toolhelp) hasta el primero cuya consola está en un terminal que se ve, que es `claude.exe`. Su PID viaja con el aviso (`console_pid`). Los intermedios con una consola oculta no cuentan.
+- **Su ventana y su pestaña**: al pulsar, la app se engancha un momento a esa consola (`AttachConsole`). En Windows Terminal, `GetConsoleWindow` da una `PseudoConsoleWindow` invisible cuya dueña (`GetAncestor(GA_ROOTOWNER)`) es la ventana del terminal, y `GetConsoleTitleW` da el título de la pestaña. En la consola clásica, la ventana de la consola es la de verdad. Un pseudoterminal sin dueña, como el de VS Code, no tiene ventana que traer.
+- **Orden**: primero se trae la ventana (`SW_RESTORE` si está minimizada y `SetForegroundWindow`), en el mismo clic, porque Windows solo deja poner delante una ventana al programa que ha recibido el último clic. Después, en otro hilo, se elige la pestaña con UI Automation (crate `windows`): la `TabItem` con el mismo nombre o, si ninguna, la que solo cambia en el icono del principio (✳, ◐…), que Claude Code va cambiando mientras trabaja.
+- **Comprobado sin tocar ventanas** (21-11-2026, Windows Terminal con tres pestañas de Claude): desde el PID de `claude.exe` sale la ventana de Windows Terminal y el título exacto de su pestaña (0,2 ms). UI Automation ve las tres pestañas y elige la buena (52 ms). La búsqueda de la sesión se salta los procesos intermedios (8 ms).
+- **Límites**: si renombras la pestaña a mano, trae la ventana pero no cambia de pestaña. Con dos pestañas con el mismo título, elige la primera. El `.exe` pasa de unos 180 KB a unos 215 KB.
 
 ### Varios avisos a la vez: solo el último
 
@@ -489,6 +500,7 @@ Tomadas:
 - [x] La mascota del escritorio solo avisa cuando Claude **pregunta** o **pide permiso**.
 - [x] **Aviso de terminado** (20-11-2026): también avisa cuando Claude termina tras 30 s o más trabajando sin ti, con "¡He terminado!" y una animación propia, y se va sola a los 10 s (sección 6, "Aviso de terminado").
 - [x] Aparece aunque estés mirando el terminal, con una opción para desactivarla.
+- [x] **Traer el terminal al pulsar** (21-11-2026): al pulsar al gato, la ventana del terminal de esa sesión sale con su tamaño y se pone delante, y en Windows Terminal cambia a su pestaña (sección 6, "Traer el terminal al pulsar").
 - [x] Varios avisos a la vez: solo se muestra el último.
 - [x] Posición, fuente (Terminus), animaciones de entrada, aviso y salida, y texto del bocadillo con icono de carpeta en pixel art (sección 6).
 - [x] Tecnología de la app: Rust + Win32 nativo.
@@ -515,6 +527,7 @@ Pendientes:
 - Cuánto tarda en salir el aviso de segundo plano de Bash. Si sale enseguida, el gato se va casi al pulsar "Permitir"; si no, se va al terminar el comando.
 - Que `$.process.spawn` mantenga viva la app hasta que se despide. La documentación dice que el hijo muere al salir del bucle, al abortarse el hook o al recargarse el módulo, y nada más. Por eso, si interrumpes el turno mientras hay una pregunta, la app desaparece de golpe, sin guiño.
 - Tiempos reales de arranque en este equipo de Rust + Win32 frente a Tauri: no hay datos fiables publicados.
+- Traer el terminal al pulsar, en vivo: que Windows deje a la app poner delante el terminal tras el clic (la ventana del gato no se activa al pulsarla), que el `Select` de UI Automation cambie de pestaña en Windows Terminal y que `$.process.spawn` lance la app como hija de `claude.exe`, o con intermedios que la búsqueda se salte. Si la ventana estaba detrás de otras, puede verse un instante la pestaña anterior antes del cambio.
 - Si softbuffer admite transparencia por píxel en Windows.
 - La cobertura de Latin-1 de Cozette, que es una de las alternativas.
 - Los glifos de Terminus uno a uno: su web declara ISO 8859-1, pero no se han revisado los caracteres.

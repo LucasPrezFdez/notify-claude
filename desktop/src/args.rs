@@ -4,12 +4,16 @@
 //! mascota --kind pregunta|permiso|terminado --session <id> [--message <texto>] [--project <nombre> | --cwd <ruta>]
 //! mascota --dismiss --session <id>
 //! ```
+//!
+//! El aviso lleva además el PID de la sesión de Claude Code que lo manda (`console_pid`), para
+//! traer su terminal al frente al pulsar al gato. No va en la línea de órdenes: lo busca `main`
+//! al lanzarse (`terminal::session_pid`) y viaja con el resto al reenviarlo.
 
 use crate::scene::Kind;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Request {
-    Show { kind: Kind, session: String, message: String, project: String },
+    Show { kind: Kind, session: String, message: String, project: String, console_pid: u32 },
     Dismiss { session: String },
 }
 
@@ -54,13 +58,15 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Request, String>
         }
         .to_string()
     });
-    Ok(Request::Show { kind, session, message, project })
+    Ok(Request::Show { kind, session, message, project, console_pid: 0 })
 }
 
 impl Request {
     pub fn encode(&self) -> String {
         match self {
-            Request::Show { kind, session, message, project } => [kind.name(), session, message, project].join(&SEP.to_string()),
+            Request::Show { kind, session, message, project, console_pid } => {
+                [kind.name(), session, message, project, &console_pid.to_string()].join(&SEP.to_string())
+            }
             Request::Dismiss { session } => ["dismiss", session].join(&SEP.to_string()),
         }
     }
@@ -69,11 +75,12 @@ impl Request {
         let f: Vec<&str> = s.split(SEP).collect();
         match f.as_slice() {
             ["dismiss", session] => Some(Request::Dismiss { session: session.to_string() }),
-            [k, session, message, project] => Some(Request::Show {
+            [k, session, message, project, pid] => Some(Request::Show {
                 kind: Kind::from_name(k)?,
                 session: session.to_string(),
                 message: message.to_string(),
                 project: project.to_string(),
+                console_pid: pid.parse().ok()?,
             }),
             _ => None,
         }
@@ -91,7 +98,10 @@ mod tests {
     #[test]
     fn aviso_de_permiso() {
         let r = p(&["--kind", "permiso", "--session", "abc", "--message", "¿Puedo usar Bash?", "--cwd", r"C:\Users\x\Documents\notify-claude\"]).unwrap();
-        assert_eq!(r, Request::Show { kind: Kind::Permiso, session: "abc".into(), message: "¿Puedo usar Bash?".into(), project: "notify-claude".into() });
+        assert_eq!(
+            r,
+            Request::Show { kind: Kind::Permiso, session: "abc".into(), message: "¿Puedo usar Bash?".into(), project: "notify-claude".into(), console_pid: 0 }
+        );
     }
 
     #[test]
@@ -122,14 +132,20 @@ mod tests {
 
     #[test]
     fn ida_y_vuelta() {
+        let mut con_pid = p(&["--kind", "permiso", "--session", "s"]).unwrap();
+        if let Request::Show { console_pid, .. } = &mut con_pid {
+            *console_pid = 28228;
+        }
         for r in [
             p(&["--kind", "pregunta", "--session", "s 1", "--message", "¿Qué hago?\ncon dos líneas", "--project", "x"]).unwrap(),
+            con_pid,
             p(&["--kind", "terminado", "--session", "s", "--project", "notify-claude"]).unwrap(),
             p(&["--dismiss", "--session", "s"]).unwrap(),
         ] {
             assert_eq!(Request::decode(&r.encode()), Some(r));
         }
         assert_eq!(Request::decode("basura"), None);
-        assert_eq!(Request::decode(&["otro", "s", "m", "p"].join(&SEP.to_string())), None);
+        assert_eq!(Request::decode(&["otro", "s", "m", "p", "0"].join(&SEP.to_string())), None);
+        assert_eq!(Request::decode(&["permiso", "s", "m", "p", "x"].join(&SEP.to_string())), None);
     }
 }

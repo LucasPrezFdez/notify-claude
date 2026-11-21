@@ -3,7 +3,8 @@
 //! Se lanza con cada aviso y se cierra cuando el aviso se atiende. Es una ventana Win32
 //! *layered* con alfa por píxel: lo transparente deja pasar los clics, y el borde inferior
 //! de la ventana coincide con el de la zona de trabajo, así que el gato parece salir de
-//! detrás de la barra de tareas.
+//! detrás de la barra de tareas. Al pulsarlo, se despide y trae al frente el terminal de la
+//! sesión que ha mandado el aviso (`terminal.rs`).
 
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
@@ -13,9 +14,11 @@ mod bubble;
 mod cat;
 mod font_data;
 mod scene;
+mod terminal;
 
 use std::ffi::c_void;
 use std::ptr::{null, null_mut};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::*;
@@ -40,9 +43,13 @@ fn wide(s: &str) -> Vec<u16> {
 }
 
 fn main() {
-    let Ok(req) = args::parse(std::env::args().skip(1)) else {
+    let Ok(mut req) = args::parse(std::env::args().skip(1)) else {
         std::process::exit(2);
     };
+    // quien lanza la app es la sesión de Claude Code: se busca ahora, mientras es su padre
+    if let Request::Show { console_pid, .. } = &mut req {
+        *console_pid = terminal::session_pid();
+    }
     unsafe {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         // Instancia única. Si ya hay una, se le pasa la petición; si esa se está cerrando
@@ -51,8 +58,8 @@ fn main() {
         for _ in 0..60 {
             let mutex = CreateMutexW(null(), 0, mutex_name.as_ptr());
             if GetLastError() != ERROR_ALREADY_EXISTS {
-                if let Request::Show { kind, session, message, project } = req {
-                    run(kind, session, &message, &project);
+                if let Request::Show { kind, session, message, project, console_pid } = req {
+                    run(kind, session, &message, &project, console_pid);
                 }
                 // un --dismiss sin nada abierto no tiene nada que cerrar
                 return;
@@ -127,6 +134,10 @@ struct App {
     layout: Layout,
     surface: Surface,
     session: String,
+    /// La sesión de Claude Code del aviso que se ve, para traer su terminal (0 si no se sabe).
+    console_pid: u32,
+    /// El hilo que está eligiendo la pestaña del terminal, si lo hay.
+    tab: Option<JoinHandle<()>>,
     /// Zona de trabajo del monitor donde aparece el gato, y sus escalas enteras.
     work: RECT,
     scales: (i32, i32),
@@ -135,6 +146,30 @@ struct App {
 }
 
 impl App {
+    /// Trae al frente el terminal del aviso. La pestaña se elige en otro hilo, porque UI
+    /// Automation puede tardar y la animación de despedida seguiría parada.
+    fn bring_terminal(&mut self) {
+        let Some(target) = terminal::find(self.console_pid) else { return };
+        terminal::raise(target.window);
+        // con dos clics seguidos, el segundo solo trae la ventana
+        let busy = self.tab.as_ref().is_some_and(|t| !t.is_finished());
+        let Some(title) = target.title.filter(|_| !busy) else { return };
+        let window = target.window as usize;
+        self.tab = Some(std::thread::spawn(move || {
+            terminal::select_tab(window as HWND, &title);
+        }));
+    }
+
+    /// Espera, como mucho `limit`, a que acabe el hilo de la pestaña: al salir de la app, se
+    /// cortaría a medias.
+    fn wait_tab(&mut self, limit: Duration) {
+        let Some(tab) = self.tab.take() else { return };
+        let deadline = Instant::now() + limit;
+        while !tab.is_finished() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     unsafe fn set_alert(&mut self, message: &str, project: &str) {
         self.bubble = Bubble::new(message, project);
         self.layout = Layout::new(&self.bubble, self.scales.0, self.scales.1);
@@ -145,8 +180,9 @@ impl App {
 
     unsafe fn handle(&mut self, req: Request) {
         match req {
-            Request::Show { kind, session, message, project } => {
+            Request::Show { kind, session, message, project, console_pid } => {
                 self.session = session;
+                self.console_pid = console_pid;
                 self.set_alert(&message, &project);
                 self.director.alert(kind);
                 self.render();
@@ -202,7 +238,7 @@ unsafe fn target_monitor() -> (RECT, u32) {
     (info.rcWork, dpi_x)
 }
 
-unsafe fn run(kind: Kind, session: String, message: &str, project: &str) {
+unsafe fn run(kind: Kind, session: String, message: &str, project: &str, console_pid: u32) {
     let (work, dpi) = target_monitor();
     let scales = scene::scales(dpi);
     let instance = GetModuleHandleW(null());
@@ -242,6 +278,8 @@ unsafe fn run(kind: Kind, session: String, message: &str, project: &str) {
         bubble,
         layout,
         session,
+        console_pid,
+        tab: None,
         work,
         scales,
         start: Instant::now(),
@@ -263,6 +301,8 @@ unsafe fn run(kind: Kind, session: String, message: &str, project: &str) {
         DispatchMessageW(&msg);
     }
     timeEndPeriod(1);
+    // Mientras, la ventana ya no está y otro aviso espera a que salga (hasta 3 s, en `main`).
+    (*app).wait_tab(Duration::from_secs(2));
     drop(Box::from_raw(app));
 }
 
@@ -277,9 +317,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             app.tick();
             0
         }
-        // pulsar al gato (o su bocadillo) es decirle "ya lo he visto"
+        // pulsar al gato (o su bocadillo) es decirle "ya lo he visto, voy": se despide y trae
+        // el terminal ahora, que la app acaba de recibir el clic y Windows la deja hacerlo
         WM_LBUTTONDOWN => {
             app.director.dismiss();
+            app.bring_terminal();
             0
         }
         WM_MOUSEACTIVATE => MA_NOACTIVATE as LRESULT,
